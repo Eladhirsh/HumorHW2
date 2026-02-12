@@ -45,9 +45,17 @@ export default async function StepsPage({ params }: { params: Promise<{ id: stri
         >
           &larr; Back to Flavors
         </Link>
-        <h2 className="text-2xl font-bold text-white">
-          Steps for &ldquo;{flavor.slug}&rdquo;
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-white">
+            Steps for &ldquo;{flavor.slug}&rdquo;
+          </h2>
+          <Link
+            href={`/admin/flavors/${flavorId}/run`}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            Run Pipeline
+          </Link>
+        </div>
         {flavor.description && (
           <p className="text-gray-400 text-sm mt-1">{flavor.description}</p>
         )}

@@ -221,6 +221,12 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
                         <Link
+                          href={`/admin/flavors/${f.id}/run`}
+                          className="text-xs bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 px-2 py-0.5 rounded"
+                        >
+                          Run
+                        </Link>
+                        <Link
                           href={`/admin/flavors/${f.id}/steps`}
                           className="text-xs text-cyan-400 hover:text-cyan-300"
                         >
