@@ -21,7 +21,27 @@ interface LLMModel {
   is_temperature_supported: boolean;
 }
 
-async function callGemini(
+// Map DB model IDs to free OpenRouter model IDs
+function toOpenRouterModel(providerModelId: string, needsVision: boolean): string {
+  // For vision steps, use a free vision-capable model
+  if (needsVision) {
+    return "google/gemini-2.0-flash-exp:free";
+  }
+  // For text-only steps, map to free models
+  const mapping: Record<string, string> = {
+    "gemini-2.5-flash": "google/gemini-2.0-flash-exp:free",
+    "gemini-2.5-flash-lite": "google/gemini-2.0-flash-exp:free",
+    "gemini-2.5-pro": "google/gemini-2.0-flash-exp:free",
+    "gemini-1.5-flash": "google/gemini-2.0-flash-exp:free",
+    "gemini-1.5-pro": "google/gemini-2.0-flash-exp:free",
+    "gpt-4.1-2025-04-14": "google/gemini-2.0-flash-exp:free",
+    "gpt-4o-2024-08-06": "google/gemini-2.0-flash-exp:free",
+    "gpt-4o-mini-2024-07-18": "google/gemini-2.0-flash-exp:free",
+  };
+  return mapping[providerModelId] || "google/gemini-2.0-flash-exp:free";
+}
+
+async function callOpenRouter(
   model: string,
   systemPrompt: string,
   userPrompt: string,
@@ -29,53 +49,60 @@ async function callGemini(
   imageMime: string | null,
   temperature: number | null,
 ) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
 
-  const parts: Record<string, unknown>[] = [];
-  if (imageBase64 && imageMime) {
-    parts.push({ inline_data: { mime_type: imageMime, data: imageBase64 } });
+  // Build messages in OpenAI-compatible format
+  const messages: Record<string, unknown>[] = [];
+
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
   }
-  parts.push({ text: userPrompt });
+
+  // Build user message content
+  if (imageBase64 && imageMime) {
+    // Multimodal: image + text
+    messages.push({
+      role: "user",
+      content: [
+        {
+          type: "image_url",
+          image_url: { url: `data:${imageMime};base64,${imageBase64}` },
+        },
+        { type: "text", text: userPrompt },
+      ],
+    });
+  } else {
+    messages.push({ role: "user", content: userPrompt });
+  }
 
   const body: Record<string, unknown> = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ parts }],
+    model,
+    messages,
   };
   if (temperature != null) {
-    body.generationConfig = { temperature };
+    body.temperature = temperature;
   }
 
-  const geminiModel = mapToGeminiModel(model);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
-
-  const resp = await fetch(url, {
+  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://humorhw2.vercel.app",
+      "X-Title": "Humor Admin Pipeline",
+    },
     body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
     const errText = await resp.text();
-    throw new Error(`Gemini API error (${resp.status}): ${errText}`);
+    throw new Error(`OpenRouter API error (${resp.status}): ${errText}`);
   }
 
   const data = await resp.json();
-  const text =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = data?.choices?.[0]?.message?.content ?? "";
   return text;
-}
-
-function mapToGeminiModel(providerModelId: string): string {
-  // Map stored provider model IDs to actual Gemini API model names
-  const mapping: Record<string, string> = {
-    "gemini-2.5-flash": "gemini-2.0-flash",
-    "gemini-2.5-flash-lite": "gemini-2.0-flash-lite",
-    "gemini-2.5-pro": "gemini-2.0-flash",
-    "gemini-1.5-flash": "gemini-1.5-flash",
-    "gemini-1.5-pro": "gemini-1.5-pro",
-  };
-  return mapping[providerModelId] || "gemini-2.0-flash";
 }
 
 function interpolatePrompt(
@@ -170,6 +197,7 @@ export async function POST(req: NextRequest) {
 
     // Determine if this step needs the image (input type 1 = image-and-text)
     const needsImage = step.llm_input_type_id === 1;
+    const openRouterModel = toOpenRouterModel(providerModelId, needsImage);
     const temp =
       model?.is_temperature_supported === false
         ? null
@@ -177,8 +205,8 @@ export async function POST(req: NextRequest) {
 
     const startTime = Date.now();
     try {
-      const output = await callGemini(
-        providerModelId,
+      const output = await callOpenRouter(
+        openRouterModel,
         systemPrompt,
         userPrompt,
         needsImage ? imageBase64 : null,
