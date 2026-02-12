@@ -25,20 +25,10 @@ interface LLMModel {
 function toOpenRouterModel(providerModelId: string, needsVision: boolean): string {
   // For vision steps, use a free vision-capable model
   if (needsVision) {
-    return "google/gemini-2.0-flash-exp:free";
+    return "google/gemma-3-27b-it:free";
   }
-  // For text-only steps, map to free models
-  const mapping: Record<string, string> = {
-    "gemini-2.5-flash": "google/gemini-2.0-flash-exp:free",
-    "gemini-2.5-flash-lite": "google/gemini-2.0-flash-exp:free",
-    "gemini-2.5-pro": "google/gemini-2.0-flash-exp:free",
-    "gemini-1.5-flash": "google/gemini-2.0-flash-exp:free",
-    "gemini-1.5-pro": "google/gemini-2.0-flash-exp:free",
-    "gpt-4.1-2025-04-14": "google/gemini-2.0-flash-exp:free",
-    "gpt-4o-2024-08-06": "google/gemini-2.0-flash-exp:free",
-    "gpt-4o-mini-2024-07-18": "google/gemini-2.0-flash-exp:free",
-  };
-  return mapping[providerModelId] || "google/gemini-2.0-flash-exp:free";
+  // For text-only steps, use a capable free text model
+  return "meta-llama/llama-3.3-70b-instruct:free";
 }
 
 async function callOpenRouter(
