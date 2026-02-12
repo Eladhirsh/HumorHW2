@@ -49,14 +49,23 @@ export default function PipelineRunner({
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
-    setImageMime(file.type);
     setImagePreview(URL.createObjectURL(file));
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1];
+
+    // Convert all images to JPEG via Canvas (handles HEIC and other formats)
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+      const base64 = jpegDataUrl.split(",")[1];
       setImageBase64(base64);
+      setImageMime("image/jpeg");
     };
-    reader.readAsDataURL(file);
+    img.src = URL.createObjectURL(file);
   }, []);
 
   const handleDrop = useCallback(
