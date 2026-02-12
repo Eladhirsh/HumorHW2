@@ -49,23 +49,28 @@ export default function PipelineRunner({
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
-    setImagePreview(URL.createObjectURL(file));
 
-    // Convert all images to JPEG via Canvas (handles HEIC and other formats)
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.drawImage(img, 0, 0);
-      const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.9);
-      const base64 = jpegDataUrl.split(",")[1];
+    // Reject HEIC — the backend doesn't support it and browsers can't reliably convert it
+    const lowerName = file.name.toLowerCase();
+    if (file.type === "image/heic" || file.type === "image/heif" || lowerName.endsWith(".heic") || lowerName.endsWith(".heif")) {
+      setError("HEIC images are not supported. Please convert to JPEG or PNG first.");
+      return;
+    }
+
+    setError(null);
+    const supportedMime = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)
+      ? file.type
+      : "image/jpeg";
+
+    setImagePreview(URL.createObjectURL(file));
+    setImageMime(supportedMime);
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1];
       setImageBase64(base64);
-      setImageMime("image/jpeg");
     };
-    img.src = URL.createObjectURL(file);
+    reader.readAsDataURL(file);
   }, []);
 
   const handleDrop = useCallback(
@@ -228,7 +233,7 @@ export default function PipelineRunner({
             <input
               ref={fileRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
