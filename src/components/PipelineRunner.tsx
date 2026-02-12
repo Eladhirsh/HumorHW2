@@ -10,14 +10,25 @@ interface StepInfo {
   description: string | null;
 }
 
-interface StepResult {
-  stepId: number;
-  order: number;
+interface ApiStep {
+  step: string;
   status: "success" | "error";
-  output: string;
-  model: string;
+  detail: string;
   durationMs: number;
 }
+
+interface Caption {
+  id?: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+const PIPELINE_STAGES = [
+  { label: "Presigned URL", description: "Generate upload URL" },
+  { label: "Upload", description: "Upload image to S3" },
+  { label: "Register", description: "Register image in pipeline" },
+  { label: "Generate", description: "Generate captions via LLM pipeline" },
+];
 
 export default function PipelineRunner({
   flavorId,
@@ -31,8 +42,8 @@ export default function PipelineRunner({
   const [imageMime, setImageMime] = useState<string | null>(null);
   const [additionalContext, setAdditionalContext] = useState("");
   const [running, setRunning] = useState(false);
-  const [currentStep, setCurrentStep] = useState<number>(0);
-  const [results, setResults] = useState<StepResult[]>([]);
+  const [apiSteps, setApiSteps] = useState<ApiStep[]>([]);
+  const [captions, setCaptions] = useState<Caption[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -63,9 +74,9 @@ export default function PipelineRunner({
       return;
     }
     setRunning(true);
-    setResults([]);
+    setApiSteps([]);
+    setCaptions([]);
     setError(null);
-    setCurrentStep(1);
 
     try {
       const resp = await fetch("/api/pipeline", {
@@ -85,11 +96,10 @@ export default function PipelineRunner({
       }
 
       const data = await resp.json();
-      setResults(data.results);
-      setCurrentStep(0);
+      setApiSteps(data.steps || []);
+      setCaptions(data.captions || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-      setCurrentStep(0);
     } finally {
       setRunning(false);
     }
@@ -100,69 +110,83 @@ export default function PipelineRunner({
     setImageBase64(null);
     setImageMime(null);
     setAdditionalContext("");
-    setResults([]);
+    setApiSteps([]);
+    setCaptions([]);
     setError(null);
-    setCurrentStep(0);
     if (fileRef.current) fileRef.current.value = "";
   };
 
   return (
     <div className="space-y-6">
-      {/* Pipeline overview */}
+      {/* LLM Pipeline steps (from DB) */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-300 mb-3">Pipeline Steps</h3>
+        <h3 className="text-sm font-medium text-gray-300 mb-3">LLM Pipeline Steps</h3>
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {stepsInfo.map((step, i) => {
-            const result = results.find((r) => r.stepId === step.id);
-            const isRunning = running && currentStep > 0 && !result &&
-              (results.length === i);
-            let borderColor = "border-gray-700";
-            let bgColor = "bg-gray-800/50";
-            if (result?.status === "success") {
-              borderColor = "border-emerald-700";
-              bgColor = "bg-emerald-900/20";
-            } else if (result?.status === "error") {
-              borderColor = "border-red-700";
-              bgColor = "bg-red-900/20";
-            } else if (isRunning) {
-              borderColor = "border-indigo-600";
-              bgColor = "bg-indigo-900/20";
-            }
-            return (
-              <div key={step.id} className="flex items-center gap-2">
-                <div
-                  className={`${bgColor} ${borderColor} border rounded-lg px-3 py-2 min-w-[140px] transition-colors`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 text-xs font-bold text-gray-300">
-                      {step.order}
-                    </span>
-                    <span className="text-xs font-medium text-gray-300">{step.type}</span>
-                    {isRunning && (
-                      <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
-                    )}
-                    {result?.status === "success" && (
-                      <span className="text-emerald-400 text-xs">&#10003;</span>
-                    )}
-                    {result?.status === "error" && (
-                      <span className="text-red-400 text-xs">&#10007;</span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-gray-500">{step.model}</p>
-                  {result && (
-                    <p className="text-[10px] text-gray-600 mt-0.5">
-                      {(result.durationMs / 1000).toFixed(1)}s
-                    </p>
-                  )}
+          {stepsInfo.map((step, i) => (
+            <div key={step.id} className="flex items-center gap-2">
+              <div className="bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-2 min-w-[140px]">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 text-xs font-bold text-gray-300">
+                    {step.order}
+                  </span>
+                  <span className="text-xs font-medium text-gray-300">{step.type}</span>
                 </div>
-                {i < stepsInfo.length - 1 && (
-                  <span className="text-gray-600 text-lg shrink-0">&#8594;</span>
-                )}
+                <p className="text-[10px] text-gray-500">{step.model}</p>
               </div>
-            );
-          })}
+              {i < stepsInfo.length - 1 && (
+                <span className="text-gray-600 text-lg shrink-0">&#8594;</span>
+              )}
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* API pipeline progress */}
+      {(running || apiSteps.length > 0) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-gray-300 mb-3">API Pipeline Progress</h3>
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            {PIPELINE_STAGES.map((stage, i) => {
+              const step = apiSteps[i];
+              const isRunning = running && !step && apiSteps.length === i;
+              let borderColor = "border-gray-700";
+              let bgColor = "bg-gray-800/50";
+              if (step?.status === "success") {
+                borderColor = "border-emerald-700";
+                bgColor = "bg-emerald-900/20";
+              } else if (step?.status === "error") {
+                borderColor = "border-red-700";
+                bgColor = "bg-red-900/20";
+              } else if (isRunning) {
+                borderColor = "border-indigo-600";
+                bgColor = "bg-indigo-900/20";
+              }
+              return (
+                <div key={i} className="flex items-center gap-2">
+                  <div className={`${bgColor} ${borderColor} border rounded-lg px-3 py-2 min-w-[130px] transition-colors`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-gray-700 text-xs font-bold text-gray-300">
+                        {i + 1}
+                      </span>
+                      <span className="text-xs font-medium text-gray-300">{stage.label}</span>
+                      {isRunning && <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />}
+                      {step?.status === "success" && <span className="text-emerald-400 text-xs">&#10003;</span>}
+                      {step?.status === "error" && <span className="text-red-400 text-xs">&#10007;</span>}
+                    </div>
+                    <p className="text-[10px] text-gray-500">{stage.description}</p>
+                    {step && (
+                      <p className="text-[10px] text-gray-600 mt-0.5">{(step.durationMs / 1000).toFixed(1)}s</p>
+                    )}
+                  </div>
+                  {i < PIPELINE_STAGES.length - 1 && (
+                    <span className="text-gray-600 text-lg shrink-0">&#8594;</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Image upload */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -195,7 +219,7 @@ export default function PipelineRunner({
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/heic"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -250,122 +274,52 @@ export default function PipelineRunner({
         </div>
       )}
 
-      {/* Results */}
-      {results.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-white">Results</h3>
-          {results.map((result) => {
-            const stepInfo = stepsInfo.find((s) => s.id === result.stepId);
-            return (
-              <StepResultCard
-                key={result.stepId}
-                result={result}
-                stepInfo={stepInfo}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StepResultCard({
-  result,
-  stepInfo,
-}: {
-  result: StepResult;
-  stepInfo?: StepInfo;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const isError = result.status === "error";
-
-  // Try to parse as JSON array for caption display
-  let captions: string[] | null = null;
-  if (!isError) {
-    try {
-      // Strip markdown code fences if present
-      let cleaned = result.output.trim();
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned.replace(/^```[^\n]*\n/, "").replace(/\n```$/, "");
-      }
-      const parsed = JSON.parse(cleaned);
-      if (Array.isArray(parsed) && parsed.every((i) => typeof i === "string")) {
-        captions = parsed;
-      }
-    } catch {
-      // Not a JSON array, show as text
-    }
-  }
-
-  return (
-    <div
-      className={`border rounded-lg overflow-hidden ${
-        isError
-          ? "border-red-800 bg-red-900/10"
-          : "border-gray-800 bg-gray-900"
-      }`}
-    >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/30 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <span
-            className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-              isError
-                ? "bg-red-900/50 text-red-400"
-                : "bg-emerald-900/50 text-emerald-400"
-            }`}
-          >
-            {result.order}
-          </span>
-          <div className="text-left">
-            <span className="text-sm font-medium text-gray-200">
-              {stepInfo?.type || `Step ${result.order}`}
-            </span>
-            {stepInfo?.description && (
-              <span className="text-xs text-gray-500 ml-2">
-                {stepInfo.description}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">
-            {result.model} &middot; {(result.durationMs / 1000).toFixed(1)}s
-          </span>
-          <span className="text-gray-600 text-xs">{expanded ? "▲" : "▼"}</span>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-gray-800">
-          {captions ? (
-            <div className="mt-3 space-y-2">
-              {captions.map((caption, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2 p-2 bg-gray-800/50 rounded-lg"
-                >
-                  <span className="text-xs font-bold text-gray-500 w-5 shrink-0 pt-0.5">
-                    {i + 1}
-                  </span>
-                  <p className="text-sm text-gray-200">{caption}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <pre
-              className={`mt-3 text-xs rounded-lg p-3 max-h-80 overflow-auto whitespace-pre-wrap break-words ${
-                isError
-                  ? "bg-red-900/20 text-red-300"
-                  : "bg-gray-800/50 text-gray-300"
+      {/* Step details */}
+      {apiSteps.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-gray-400">Step Details</h3>
+          {apiSteps.map((step, i) => (
+            <div
+              key={i}
+              className={`border rounded-lg px-4 py-2 text-sm ${
+                step.status === "error"
+                  ? "border-red-800 bg-red-900/10 text-red-300"
+                  : "border-gray-800 bg-gray-900 text-gray-400"
               }`}
             >
-              {result.output}
-            </pre>
-          )}
+              <span className="font-medium text-gray-300">{step.step}:</span>{" "}
+              <span className="font-mono text-xs break-all">{step.detail}</span>
+              <span className="text-gray-600 ml-2">({(step.durationMs / 1000).toFixed(1)}s)</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Captions */}
+      {captions.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">
+            Generated Captions ({captions.length})
+          </h3>
+          <div className="space-y-2">
+            {captions.map((caption, i) => {
+              const text =
+                typeof caption === "string"
+                  ? caption
+                  : caption.content || JSON.stringify(caption);
+              return (
+                <div
+                  key={caption.id || i}
+                  className="flex items-start gap-3 p-3 bg-gray-800/50 rounded-lg"
+                >
+                  <span className="text-sm font-bold text-gray-500 w-6 shrink-0">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm text-gray-200">{text}</p>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
