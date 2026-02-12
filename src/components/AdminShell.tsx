@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "Users & Profiles", icon: "👤" },
   { href: "/admin/images", label: "Images", icon: "🖼️" },
   { href: "/admin/captions", label: "Captions", icon: "💬" },
+  { href: "/admin/flavors", label: "Flavors & Steps", icon: "🎭" },
 ];
 
 export default function AdminShell({
