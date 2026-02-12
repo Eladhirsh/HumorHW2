@@ -21,24 +21,36 @@ interface LLMModel {
   is_temperature_supported: boolean;
 }
 
-// Map DB model IDs to free OpenRouter model IDs
-function toOpenRouterModel(providerModelId: string, needsVision: boolean): string {
-  // For vision steps, use a free vision-capable model
-  if (needsVision) {
-    return "google/gemma-3-27b-it:free";
-  }
-  // For text-only steps, use a capable free text model
-  return "meta-llama/llama-3.3-70b-instruct:free";
+// Free vision-capable models to try in order
+const FREE_VISION_MODELS = [
+  "google/gemma-3-27b-it:free",
+  "google/gemma-3-12b-it:free",
+  "nvidia/nemotron-nano-12b-v2-vl:free",
+  "mistralai/mistral-small-3.1-24b-instruct:free",
+  "google/gemma-3-4b-it:free",
+];
+
+// Free text-only models to try in order
+const FREE_TEXT_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-r1-0528:free",
+  "nousresearch/hermes-3-llama-3.1-405b:free",
+  "qwen/qwen3-4b:free",
+  "google/gemma-3-27b-it:free",
+];
+
+function getModelCandidates(needsVision: boolean): string[] {
+  return needsVision ? FREE_VISION_MODELS : FREE_TEXT_MODELS;
 }
 
 async function callOpenRouter(
-  model: string,
+  modelCandidates: string[],
   systemPrompt: string,
   userPrompt: string,
   imageBase64: string | null,
   imageMime: string | null,
   temperature: number | null,
-) {
+): Promise<{ text: string; usedModel: string }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error("OPENROUTER_API_KEY not configured");
 
@@ -49,9 +61,7 @@ async function callOpenRouter(
     messages.push({ role: "system", content: systemPrompt });
   }
 
-  // Build user message content
   if (imageBase64 && imageMime) {
-    // Multimodal: image + text
     messages.push({
       role: "user",
       content: [
@@ -66,33 +76,43 @@ async function callOpenRouter(
     messages.push({ role: "user", content: userPrompt });
   }
 
-  const body: Record<string, unknown> = {
-    model,
-    messages,
-  };
-  if (temperature != null) {
-    body.temperature = temperature;
-  }
+  // Try each model candidate; fall back on 429 or 404
+  let lastError = "";
+  for (const model of modelCandidates) {
+    const body: Record<string, unknown> = { model, messages };
+    if (temperature != null) {
+      body.temperature = temperature;
+    }
 
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://humorhw2.vercel.app",
-      "X-Title": "Humor Admin Pipeline",
-    },
-    body: JSON.stringify(body),
-  });
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://humorhw2.vercel.app",
+        "X-Title": "Humor Admin Pipeline",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!resp.ok) {
+    if (resp.ok) {
+      const data = await resp.json();
+      const text = data?.choices?.[0]?.message?.content ?? "";
+      return { text, usedModel: model };
+    }
+
+    // On rate-limit or not-found, try next model
+    if (resp.status === 429 || resp.status === 404) {
+      lastError = await resp.text();
+      continue;
+    }
+
+    // Other errors are fatal
     const errText = await resp.text();
     throw new Error(`OpenRouter API error (${resp.status}): ${errText}`);
   }
 
-  const data = await resp.json();
-  const text = data?.choices?.[0]?.message?.content ?? "";
-  return text;
+  throw new Error(`All free models rate-limited. Last error: ${lastError}`);
 }
 
 function interpolatePrompt(
@@ -187,7 +207,7 @@ export async function POST(req: NextRequest) {
 
     // Determine if this step needs the image (input type 1 = image-and-text)
     const needsImage = step.llm_input_type_id === 1;
-    const openRouterModel = toOpenRouterModel(providerModelId, needsImage);
+    const modelCandidates = getModelCandidates(needsImage);
     const temp =
       model?.is_temperature_supported === false
         ? null
@@ -195,8 +215,8 @@ export async function POST(req: NextRequest) {
 
     const startTime = Date.now();
     try {
-      const output = await callOpenRouter(
-        openRouterModel,
+      const { text: output, usedModel } = await callOpenRouter(
+        modelCandidates,
         systemPrompt,
         userPrompt,
         needsImage ? imageBase64 : null,
@@ -210,7 +230,7 @@ export async function POST(req: NextRequest) {
         order: step.order_by ?? 0,
         status: "success",
         output,
-        model: modelName,
+        model: `${modelName} (${usedModel})`,
         durationMs,
       });
 
