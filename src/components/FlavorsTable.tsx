@@ -3,14 +3,12 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/browser";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 
 interface Flavor {
   id: number;
   created_datetime_utc: string | null;
   description: string | null;
   slug: string | null;
-  step_count: number;
 }
 
 export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
@@ -154,7 +152,6 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">ID</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Slug</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Description</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">Steps</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Created</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-400 uppercase">Actions</th>
               </tr>
@@ -181,7 +178,6 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
                           onChange={(e) => setEditData({ ...editData, description: e.target.value })}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center text-sm text-gray-500">{f.step_count}</td>
                       <td className="px-4 py-3 text-sm text-gray-500">{f.created_datetime_utc?.slice(0, 10)}</td>
                       <td className="px-4 py-3 text-right space-x-2">
                         <button
@@ -208,30 +204,10 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
                       <td className="px-4 py-3 max-w-md">
                         <p className="text-sm text-gray-400 truncate">{f.description || "—"}</p>
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <Link
-                          href={`/admin/flavors/${f.id}/steps`}
-                          className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
-                        >
-                          {f.step_count} <span className="text-xs">&#8594;</span>
-                        </Link>
-                      </td>
                       <td className="px-4 py-3 text-sm text-gray-500">
                         {f.created_datetime_utc?.slice(0, 10) || "—"}
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
-                        <Link
-                          href={`/admin/flavors/${f.id}/run`}
-                          className="text-xs bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 px-2 py-0.5 rounded"
-                        >
-                          Run
-                        </Link>
-                        <Link
-                          href={`/admin/flavors/${f.id}/steps`}
-                          className="text-xs text-cyan-400 hover:text-cyan-300"
-                        >
-                          Steps
-                        </Link>
                         <button
                           onClick={() => startEdit(f)}
                           className="text-xs text-indigo-400 hover:text-indigo-300"
@@ -251,7 +227,7 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500 text-sm">
+                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500 text-sm">
                     No flavors found.
                   </td>
                 </tr>
