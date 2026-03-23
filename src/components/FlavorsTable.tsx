@@ -39,9 +39,10 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
     if (!editing) return;
     setSaving(true);
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("humor_flavors")
-      .update({ description: editData.description, slug: editData.slug })
+      .update({ description: editData.description, slug: editData.slug, modified_by_user_id: user!.id })
       .eq("id", editing);
     setSaving(false);
     if (error) {
@@ -70,9 +71,10 @@ export default function FlavorsTable({ flavors }: { flavors: Flavor[] }) {
     }
     setSaving(true);
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("humor_flavors")
-      .insert({ description: newData.description || null, slug: newData.slug });
+      .insert({ description: newData.description || null, slug: newData.slug, created_by_user_id: user!.id, modified_by_user_id: user!.id });
     setSaving(false);
     if (error) {
       alert("Failed to add: " + error.message);

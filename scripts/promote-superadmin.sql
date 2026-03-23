@@ -9,5 +9,6 @@
 -- run this UPDATE there to promote yourself.
 
 UPDATE profiles
-SET is_superadmin = TRUE
+SET is_superadmin = TRUE,
+    modified_by_user_id = id
 WHERE email = 'YOUR_EMAIL@gmail.com';

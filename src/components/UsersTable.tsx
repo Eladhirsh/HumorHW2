@@ -48,9 +48,10 @@ export default function UsersTable({ profiles }: { profiles: Profile[] }) {
     if (!editing) return;
     setSaving(true);
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("profiles")
-      .update(editData)
+      .update({ ...editData, modified_by_user_id: user!.id })
       .eq("id", editing);
     setSaving(false);
     if (error) {

@@ -51,12 +51,14 @@ export default function CaptionsTable({ captions }: { captions: Caption[] }) {
     if (!editing) return;
     setSaving(true);
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("captions")
       .update({
         content: editData.content,
         is_public: editData.is_public,
         is_featured: editData.is_featured,
+        modified_by_user_id: user!.id,
       })
       .eq("id", editing);
     setSaving(false);

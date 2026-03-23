@@ -43,12 +43,14 @@ export default function ImagesGrid({ images }: { images: ImageRow[] }) {
     if (!editing) return;
     setSaving(true);
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabase
       .from("images")
       .update({
         additional_context: editData.additional_context,
         is_public: editData.is_public,
         is_common_use: editData.is_common_use,
+        modified_by_user_id: user!.id,
       })
       .eq("id", editing);
     setSaving(false);
